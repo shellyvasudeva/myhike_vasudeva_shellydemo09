@@ -2,6 +2,10 @@ import { onAuthReady } from "/src/authentication.js";
 import { db } from "./firebaseConfig.js";
 import { doc, onSnapshot } from "firebase/firestore";
 import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { getDoc, setDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+
+let currentUser = null;   // who is logged in
+let favourites = [];      // the hike IDs they've favourited
 
 function showName() {
     onAuthReady(function (user) {
@@ -105,6 +109,8 @@ async function displayHikesDynamically() {
         newcard.querySelector('.card-length').textContent = hike.length;
         newcard.querySelector('.card-image').src = `./images/${hike.code}.jpg`;
         newcard.querySelector(".read-more").href = `eachHike.html?docID=${doc.id}`;
+        // Activate the heart for this card
+        setupHeart(newcard, doc.id);
 
         // attach the template to the fron-end
         document.getElementById("hikes-go-here").appendChild(newcard);
@@ -112,4 +118,59 @@ async function displayHikesDynamically() {
 
 
 }
-displayHikesDynamically()
+function setupHeart(card, hikeID) {
+
+    // Find the heart icon
+    const heart = card.querySelector(".fav-btn");
+
+    // Fill the heart if already favourited
+    if (favourites.includes(hikeID)) {
+        heart.classList.replace("bi-heart", "bi-heart-fill");
+    }
+
+    // When clicked, run toggleFavourite
+    heart.addEventListener("click", function () {
+        toggleFavourite(heart, hikeID);
+    });
+}
+async function toggleFavourite(heart, hikeID) {
+
+    // Find the logged-in user's document
+    const userRef = doc(db, "users", currentUser.uid);
+
+    // If heart is filled, remove favourite
+    if (heart.classList.contains("bi-heart-fill")) {
+
+        await setDoc(userRef, { favourites: arrayRemove(hikeID) }, { merge: true });
+
+        heart.classList.replace("bi-heart-fill", "bi-heart");
+
+    } else {
+
+        // If heart is empty, add favourite
+        await setDoc(userRef, { favourites: arrayUnion(hikeID) }, { merge: true });
+
+        heart.classList.replace("bi-heart", "bi-heart-fill");
+    }
+}
+// Runs once Firebase knows if someone is logged in
+onAuthReady(async function (user) {
+  if (!user) {
+    location.href = "index.html";                              // Not logged in → back to start
+  } else {
+    currentUser = user;                                        // 1. Remember who's logged in
+    const userDoc = await getDoc(doc(db, "users", user.uid));  // 2. Get their user doc
+
+    // 3. Load user's favourites, or use an empty array if none exist
+    favourites = userDoc.data()?.favourites || [];   // uses "optional chaining" (?.)
+
+    // Beginner version of the line above:
+    // if (userDoc.exists() && userDoc.data().favourites) {
+    //   favourites = userDoc.data().favourites;
+    // } else {
+    //   favourites = [];
+    // }
+
+    displayHikesDynamically();                                 // 4. Draw the cards
+  }
+});
